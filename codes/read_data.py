@@ -1,5 +1,7 @@
 from pycorenlp import StanfordCoreNLP
 
+import pickle
+
 def unitoStr(word):
 	if( type(word) != str):
 		x = uni.normalize('NFKD', word).encode('ascii','ignore')
@@ -81,5 +83,50 @@ def prepare_sick(filename):
                 print(ele,',')
             return
 
+def build_dict(filename):
+	# Store dict {word: idx} in memory
+	i = 0
+	j = 0
+	idx = dict()
+	idx_edge = dict()
+	with open('../data/' + filename, 'r') as datafile:
+		for line in datafile:
+			arr = line.split('\t')
+			sent_a = arr[0].split(' ')
+			sent_b = arr[1].split(' ')
+			for word in sent_a:
+				if word not in idx:
+					idx[word] = i
+					i = i + 1
+			for word in sent_b:
+				if word not in idx:
+					idx[word] = i
+					i = i + 1
+			for node in find_deptree(arr[0]):
+				edge_label = node[1]
+				if edge_label not in idx_edge:
+					print(edge_label)
+					idx_edge[edge_label] = j
+					j += 1
+			for node in find_deptree(arr[1]):
+				edge_label = node[1]
+				if edge_label not in idx_edge:
+					idx_edge[edge_label] = j
+					j += 1
+
+	with open('dictionary.pkl', 'wb') as f:
+		pickle.dump(idx, f, pickle.HIGHEST_PROTOCOL)
+
+	with open('dictionary_edge.pkl', 'wb') as f:
+		pickle.dump(idx_edge, f, pickle.HIGHEST_PROTOCOL)
+
+	print('VOCAB_SIZE', i)
+	print('EDGE_VOCAB_SIZE', j)
+	return i, j
+
 # read_sick('SICK.txt')
-prepare_sick('sick_train.txt')
+# prepare_sick('sick_train.txt')
+
+if __name__ == '__main__':
+	n = build_dict('sick_train.txt')
+	print(n)
