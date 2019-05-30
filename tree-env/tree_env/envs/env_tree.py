@@ -55,7 +55,6 @@ class TreeEnv(gym.Env):
         action_type = self.name_action_map[temp[0]]
         source_node_id = temp[1]
         dest_node_id = temp[2]
-        print(action_type, source_node_id, dest_node_id)
         if action_type == 'DECISION':
             ans = self._decision_action(dest_node_id)
             if ans > 0:

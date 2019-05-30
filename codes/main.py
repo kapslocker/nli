@@ -1,20 +1,24 @@
 import gym
+import tree_env
 import math
 import random
 import numpy as np
 from collections import namedtuple
 from itertools import count
 from PIL import Image
-import matplotlib
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import pickle
 import torch.nn.functional as F
+import bcolz
 
 
-env = gym.make('TreeEnv').unwrapped
-
+env = gym.make('tree-v0').unwrapped
+vocab_file = 'vocab.pkl'
+train_file = 'sick_train_deptree.txt'
+test_file = 'sick_test_deptree.txt'
+glove_path = '../data/glove.6B'
 #gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -41,31 +45,74 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
-### DQN Module ###
-class DQN():
-    # input is sentence representation
-    # outputs are states 5 * MAX_SENTENCE_SIZE * MAX_SENTENCE_SIZE
-    def __init__(self):
-        pass
-    pass
+
+EMBEDDING_DIM = 50
+HIDDEN_DIM = 50
 
 ##################
 episode_durations = []
 
-def plot_durations():
-    plt.figure(2)
-    plt.clf()
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
-    plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
+### Get vocabulary ###
+with open(vocab_file, 'rb') as vocab:
+    vocab_dict = pickle.load(vocab)
 
-    plt.pause(0.001)
+vectors = bcolz.open(f'{glove_path}/6B.50.dat')[:]
+words = pickle.load(open(f'{glove_path}/6B.50_words.pkl', 'rb'))
+word2idx = pickle.load(open(f'{glove_path}/6B.50_idx.pkl', 'rb'))
+glove = {w: vectors[word2idx[w]] for w in words}
+
+
+# build vocab matrix
+matrix_len = len(vocab_dict)
+weights_matrix = np.zeros((matrix_len, EMBEDDING_DIM))
+words_found = 0
+
+# assign glove vector if found, else assign random vector
+for i, word in enumerate(vocab_dict.keys()):
+    try:
+        weights_matrix[i] = glove[word]
+        words_found += 1
+    except KeyError:
+        weights_matrix[i] = np.random.normal(scale=0.6, size=(EMBEDDING_DIM, ))
+        word2idx[word] = len(word2idx)
+
+def dep_tree_to_sent(sentence_tree):
+    words = [[node[2][2], node[2][0]] for node in sentence_tree]
+    words = sorted(words)
+    sent_list = [tup[1] for tup in words]
+    return sent_list
+
+def prepare_sequence(premise, hypothesis):
+    prem_list = dep_tree_to_sent(premise)
+    hypo_list = dep_tree_to_sent(hypothesis)
+    sentence = hypo_list + prem_list
+    indices = [word2idx[w] for w in sentence]
+    return torch.tensor(indices, dtype=torch.long, device=device)
+
+
+### DQN Module ###
+class DQN(nn.Module):
+    # input is concatenated hypothesis, premise tree pair.
+    # ['This', 'is', 'the', 'hypothesis'] + ['This', 'is', 'the', 'premise']
+    # outputs are q values for 5 * MAX_SENTENCE_SIZE * MAX_SENTENCE_SIZE actions.
+    def __init__(self, embedding_dim, hidden_dim, outputs):
+        super(DQN, self).__init__()
+        self.hidden_dim = hidden_dim
+        num_embeddings, temp = weights_matrix.size()
+        self.word_embeddings = nn.Embedding(num_embeddings, embedding_dim)
+        self.word_embeddings.load_state_dict({'weight':weights_matrix})
+        # also learn embeddings
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim)
+        self.nn1 = nn.Linear(hidden_dim, hidden_dim)
+        self.nn2 = nn.Linear(hidden_dim, hidden_dim)
+        self.head = nn.Linear(hidden_dim, outputs)
+
+    def forward(self, premise, hypothesis):
+        embeds = self.word_embeddings(sentence)
+        x, _ = self.lstm(embeds.view(len(sentence), 1, -1))
+        x = self.nn1(x.view(x.size(0), -1))
+        x = self.nn2(x.view(x.size(0), -1))
+        return self.head(x.view(x.size(0), -1))
 
 
 ### Training loop ###
@@ -78,12 +125,12 @@ EPS_DECAY = 20
 TARGET_UPDATE = 10
 
 MAX_SENTENCE_SIZE = 20
-env.newInit()
 n_actions = env.action_space.n
 
-
-policy_net = DQN(treelstm_inputs, n_actions).to(device)
-target_net = DQN(treelstm_inputs, n_actions).to(device)
+VOCAB_SIZE = len(vocab_dict)
+print("Num_actions = ", n_actions)
+policy_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
+target_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()   # Do not train target network
 
@@ -138,82 +185,52 @@ def optimize_model():
     optimizer.step()
 
 
+
 ### Learn from each training example ###
-for ex in range(len(training_data)):
-    sent1 = training_data[ex][0]
-    sent2 = training_data[ex][1]
-    label = training_data[ex][2]
-
-    # Run MAX_EPISODES episodes on each training example.
-    env.setParams(sent1, sent2, label)
-    for episode in range(num_episodes):
-        env.reset()
-        state = get_treelstm_rep_tree(sent1)
-        for t in count():
-            action = select_action(state)
-            _, reward, done, _ = env.step(action.item())
-
-            reward = torch.tensor([reward], device=device)
-
-            # TODO: Observe new state here
-            next_state = get_treelstm_rep_tree(env.get_sentence())
-            if not done:
-                next_state = state
+with open('../data/' + train_file, 'r') as training_data:
+    for line in training_data:
+        a = line.split('\t')
+        label = a[2].strip()
+        sent1_space = a[0].strip().split(' ')
+        sent2_space = a[1].strip().split(' ')
+        sent1 = []
+        sent2 = []
+        for i in range(len(sent1_space)):
+            if i == 1:
+                sent1.append(sent1_space[i])
             else:
-                next_state = None
+                temp = sent1_space.split(',')
+                sent1.append([temp[0], temp[1], temp[2]])
+        for i in range(len(sent2_space)):
+            if i == 1:
+                sent2.append(sent2_space[i])
+            else:
+                temp = sent2_space.split(',')
+                sent2.append([temp[0], temp[1], temp[2]])
+        print(sent1, sent2)
+        env.setParams(sent1, sent2, label)
+        # Run MAX_EPISODES episodes on each training example.
+        for episode in range(num_episodes):
+            env.reset()
+            state = prepare_sequence(sent1, sent2)
+            for t in count():
+                action = select_action(state)
+                _, reward, done, _ = env.step(action.item())
 
-            # Store transition into memory
-            memory.push(state, action, next_state, reward)
+                reward = torch.tensor([reward], device=device)
 
-            state = next_state
+                next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
+                if done:
+                    next_state = None
 
-            optimize_model()
-            if done:
-                episode_durations.append(t+1)
-                plot_durations()    #for debug
-                break
+                # Store transition into memory
+                memory.push(state, action, next_state, reward)
 
-# tree = [(('ROOT', 'ROOT', -1.1), 'ROOT', ('playing', 'VBG', 5)) ,
-# (('playing', 'VBG', 5), 'nsubj', ('group', 'NN', 1)) ,
-# (('playing', 'VBG', 5), 'aux', ('is', 'VBZ', 4)) ,
-# (('playing', 'VBG', 5), 'nmod', ('yard', 'NN', 8)) ,
-# (('playing', 'VBG', 5), 'dep', ('standing', 'VBG', 14)) ,
-# (('group', 'NN', 1), 'det', ('A', 'DT', 0)) ,
-# (('kids', 'NNS', 3), 'case', ('of', 'IN', 2)) ,
-# (('group', 'NN', 1), 'nmod', ('kids', 'NNS', 3)) ,
-# (('yard', 'NN', 8), 'case', ('in', 'IN', 6)) ,
-# (('yard', 'NN', 8), 'det', ('a', 'DT', 7)) ,
-# (('yard', 'NN', 8), 'cc', ('and', 'CC', 9)) ,
-# (('man', 'NN', 12), 'det', ('an', 'DT', 10)) ,
-# (('man', 'NN', 12), 'amod', ('old', 'JJ', 11)) ,
-# (('yard', 'NN', 8), 'conj', ('man', 'NN', 12)) ,
-# (('standing', 'VBG', 14), 'aux', ('is', 'VBZ', 13)) ,
-# (('background', 'NN', 17), 'case', ('in', 'IN', 15)) ,
-# (('background', 'NN', 17), 'det', ('the', 'DT', 16)) ,
-# (('standing', 'VBG', 14), 'nmod', ('background', 'NN', 17))]
-#
-# tree1 = [(('ROOT', 'ROOT', -1.1), 'ROOT', ('playing', 'VBG', 8)) ,
-# (('playing', 'VBG', 8), 'nsubj', ('group', 'NN', 1)) ,
-# (('playing', 'VBG', 8), 'aux', ('is', 'VBZ', 7)) ,
-# (('playing', 'VBG', 8), 'cc', ('and', 'CC', 9)) ,
-# (('playing', 'VBG', 8), 'conj', ('standing', 'VBG', 13)) ,
-# (('group', 'NN', 1), 'det', ('A', 'DT', 0)) ,
-# (('boys', 'NNS', 3), 'case', ('of', 'IN', 2)) ,
-# (('group', 'NN', 1), 'nmod', ('boys', 'NNS', 3)) ,
-# (('yard', 'NN', 6), 'case', ('in', 'IN', 4)) ,
-# (('yard', 'NN', 6), 'det', ('a', 'DT', 5)) ,
-# (('group', 'NN', 1), 'nmod', ('yard', 'NN', 6)) ,
-# (('man', 'NN', 11), 'det', ('a', 'DT', 10)) ,
-# (('standing', 'VBG', 13), 'nsubj', ('man', 'NN', 11)) ,
-# (('standing', 'VBG', 13), 'aux', ('is', 'VBZ', 12)) ,
-# (('background', 'NN', 16), 'case', ('in', 'IN', 14)) ,
-# (('background', 'NN', 16), 'det', ('the', 'DT', 15)) ,
-# (('standing', 'VBG', 13), 'nmod', ('background', 'NN', 16))]
-#
-#
-# if __name__ == '__main__':
-#     VOCAB_SIZE = build_dict('sick_train.txt')
-#     actions = get_available_actions(tree, tree1)
-#     for action in actions:
-#         if action[0] == 'INSERT_CHILD':
-#             print(action)
+                state = next_state
+
+                optimize_model()
+                if done:
+                    episode_durations.append(t+1)
+                    break
+
+# Test now.

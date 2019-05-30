@@ -60,4 +60,33 @@ class ChildSumTreeLSTM(nn.Module):
         return tree.state
 
 class NLITreeLSTM(nn.Module):
+    def __init__(self, vocab_size, emb_size, mem_size, hidden_size, num_classes,
+                 freeze_embed, edge_vocab_size=100, edge_size=20, dropout=None):
+        super(NLITreeLSTM, self).__init__()
+        self.embs = nn.Embedding(vocab_size, emb_size, padding_idx=0)
+        if freeze_embed:
+            self.embs.weight.requires_grad = False
+
+        self.edge_embs = nn.Embedding(edge_vocab_size, edge_size)
+        self.dropout = dropout
+
+        self.treelstm = ChildSumTreeLSTM(input_size=emb_size, hidden_size=mem_size)
+
+    def forward(self, ltree, linputs, rtree, rinputs, ledges=None, redges=None):
+        """"""
+        # compute word vectors
+        linputs = self.embs(linputs)
+        rinputs = self.embs(rinputs)
+
+        if ledges is not None and redges is not None:
+            if self.model != 'full':
+                ledges = self.edge_embs(ledges)
+                redges = self.edge_embs(redges)
+            lstate, lhidden = self.treelstm(ltree, linputs, ledges)
+            rstate, rhidden = self.treelstm(rtree, rinputs, redges)
+        else:
+            lstate, lhidden = self.treelstm(ltree, linputs)
+            rstate, rhidden = self.treelstm(rtree, rinputs)
+
+        # output = self.classifier(lstate, rstate)
     pass

@@ -1,0 +1,5 @@
+tree_env.egg-info/PKG-INFO
+tree_env.egg-info/SOURCES.txt
+tree_env.egg-info/dependency_links.txt
+tree_env.egg-info/requires.txt
+tree_env.egg-info/top_level.txt
