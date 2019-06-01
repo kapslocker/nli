@@ -98,8 +98,8 @@ class TreeEnv(gym.Env):
         encoded_list = []
         for item in list_of_tuples:
             action_type = self.action_name_map[item[0]]
-            param_1 = item[1]
-            param_2 = item[2]
+            param_1 = int(item[1])
+            param_2 = int(item[2])
             value = action_type * self.MAX_SENTENCE_SIZE * self.MAX_SENTENCE_SIZE
             value = value + param_1 * self.MAX_SENTENCE_SIZE
             value = value + param_2

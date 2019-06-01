@@ -19,6 +19,7 @@ vocab_file = 'vocab.pkl'
 train_file = 'sick_train_deptree.txt'
 test_file = 'sick_test_deptree.txt'
 glove_path = '../data/glove.6B'
+save_path = '../models/save.pth'
 #gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -76,8 +77,8 @@ for i, word in enumerate(vocab_dict.keys()):
         weights_matrix[i] = np.random.normal(scale=0.6, size=(EMBEDDING_DIM, ))
         word2idx[word] = len(word2idx)
 
-def dep_tree_to_sent(sentence_tree):
-    words = [[node[2][2], node[2][0]] for node in sentence_tree]
+def dep_tree_to_sent(sentence_tree): # tested
+    words = [[int(node[2][2]), node[2][0]] for node in sentence_tree]
     words = sorted(words)
     sent_list = [tup[1] for tup in words]
     return sent_list
@@ -86,7 +87,7 @@ def prepare_sequence(premise, hypothesis):
     prem_list = dep_tree_to_sent(premise)
     hypo_list = dep_tree_to_sent(hypothesis)
     sentence = hypo_list + prem_list
-    indices = [word2idx[w] for w in sentence]
+    indices = [vocab_dict[w] for w in sentence]
     return torch.tensor(indices, dtype=torch.long, device=device)
 
 
@@ -98,18 +99,19 @@ class DQN(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, outputs):
         super(DQN, self).__init__()
         self.hidden_dim = hidden_dim
-        num_embeddings, temp = weights_matrix.size()
+        num_embeddings, temp = weights_matrix.shape
         self.word_embeddings = nn.Embedding(num_embeddings, embedding_dim)
-        self.word_embeddings.load_state_dict({'weight':weights_matrix})
+        self.word_embeddings.weight.data.copy_(torch.from_numpy(weights_matrix))
+        # self.word_embeddings.load_state_dict({'weight':weights_matrix})
         # also learn embeddings
         self.lstm = nn.LSTM(embedding_dim, hidden_dim)
         self.nn1 = nn.Linear(hidden_dim, hidden_dim)
         self.nn2 = nn.Linear(hidden_dim, hidden_dim)
         self.head = nn.Linear(hidden_dim, outputs)
 
-    def forward(self, premise, hypothesis):
-        embeds = self.word_embeddings(sentence)
-        x, _ = self.lstm(embeds.view(len(sentence), 1, -1))
+    def forward(self, sentence_idx):
+        embeds = self.word_embeddings(sentence_idx)
+        x, _ = self.lstm(embeds.view(len(sentence_idx), 1, -1))
         x = self.nn1(x.view(x.size(0), -1))
         x = self.nn2(x.view(x.size(0), -1))
         return self.head(x.view(x.size(0), -1))
@@ -149,9 +151,23 @@ def select_action(state):
     # pick action with the largest reward
     if sample > eps_threshold:
         with torch.no_grad():
-            return policy_net(state).max(1)[1].view(1,1)
+            temp = policy_net(state)
+            print("temp", temp.shape)
+            return temp.max(1)[1].view(1, 1)
+            # return policy_net(state).max(1)[1].view(1,1)
     else:
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
+
+def best_decision(state):
+    with torch.no_grad():
+        max_act = -1
+        max_val = -10000
+        profits = policy_net(state)
+        for action in range(3):
+            if profits[action] > max_val:
+                max_act = action
+                max_val = profits[action]
+        return max_act
 
 ### Updates from replay memory ###
 def optimize_model():
@@ -185,47 +201,45 @@ def optimize_model():
     optimizer.step()
 
 
+def read_sentences(line):
+    line = line.split('\n')[0]
+    a = line.split('\t')
+    label = a[2].strip()
+    sent1_space = a[0].strip().split(' ')
+    sent2_space = a[1].strip().split(' ')
+    sent1 = []
+    sent2 = []
+    for i in range(len(sent1_space)):
+        node_raw = sent1_space[i].split(',')
+        node = [[node_raw[0], node_raw[1], node_raw[2]], node_raw[3], [node_raw[4], node_raw[5], node_raw[6]]]
+        sent1.append(node)
+    for i in range(len(sent2_space)):
+        node_raw = sent2_space[i].split(',')
+        node = [[node_raw[0], node_raw[1], node_raw[2]], node_raw[3], [node_raw[4], node_raw[5], node_raw[6]]]
+        sent2.append(node)
+    return sent1, sent2, label
 
 ### Learn from each training example ###
 with open('../data/' + train_file, 'r') as training_data:
     for line in training_data:
-        a = line.split('\t')
-        label = a[2].strip()
-        sent1_space = a[0].strip().split(' ')
-        sent2_space = a[1].strip().split(' ')
-        sent1 = []
-        sent2 = []
-        for i in range(len(sent1_space)):
-            if i == 1:
-                sent1.append(sent1_space[i])
-            else:
-                temp = sent1_space.split(',')
-                sent1.append([temp[0], temp[1], temp[2]])
-        for i in range(len(sent2_space)):
-            if i == 1:
-                sent2.append(sent2_space[i])
-            else:
-                temp = sent2_space.split(',')
-                sent2.append([temp[0], temp[1], temp[2]])
-        print(sent1, sent2)
-        env.setParams(sent1, sent2, label)
+        sent1, sent2, label = read_sentences(line)
         # Run MAX_EPISODES episodes on each training example.
         for episode in range(num_episodes):
             env.reset()
+            env.setParams(sent1, sent2, label)
             state = prepare_sequence(sent1, sent2)
             for t in count():
+                print(t)
                 action = select_action(state)
                 _, reward, done, _ = env.step(action.item())
 
                 reward = torch.tensor([reward], device=device)
-
                 next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
                 if done:
                     next_state = None
 
                 # Store transition into memory
                 memory.push(state, action, next_state, reward)
-
                 state = next_state
 
                 optimize_model()
@@ -233,4 +247,31 @@ with open('../data/' + train_file, 'r') as training_data:
                     episode_durations.append(t+1)
                     break
 
+# save model
+torch.save(policy_net.state_dict(), save_path)
+
+# load model
+# model = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
+# model.load_state_dict(torch.load(save_path))
+# model.eval()
 # Test now.
+correct = 0
+total = 0
+policy_net.eval() # In evaluation mode now.
+with open('../data/' + test_file, 'r') as test_data:
+    for line in test_data:
+        sent1, sent2, label = read_sentences(line)
+        state = prepare_sequence(sent1, sent2)
+        action = best_decision(state)
+        gold = -1
+        if label == 'ENTAILMENT':
+            gold = 0
+        elif label == 'NEUTRAL':
+            gold = 1
+        else:
+            gold = 2
+        if action == gold:
+            correct += 1
+        total += 1
+
+print("Accuracy: ", correct,"/", total)

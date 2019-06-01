@@ -15,6 +15,7 @@ import torch.nn.functional as F
 
 env = gym.make('CartPole-v0').unwrapped
 
+print("Environment Loaded.")
 #gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -40,6 +41,7 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
+
 
 ### DQN Module ###
 class DQN():

@@ -17,7 +17,7 @@ def build_vocab():
             vect = np.array(line[1:]).astype(np.float)
             vectors.append(vect)
 
-    vectors = bcolz.carray(vectors[1:].reshape((400001, 50)), rootdir='../data/glove.6B/6B.50d.dat', mode='w')
+    vectors = bcolz.carray(vectors[1:].reshape((400001, 50)), rootdir='../data/glove.6B/6B.50.dat', mode='w')
     vectors.flush()
     pickle.dump(words, open('../data/glove.6B/6B.50_words.pkl', 'wb'))
     pickle.dump(word2idx, open('../data/glove.6B/6B.50_idx.pkl', 'wb'))
