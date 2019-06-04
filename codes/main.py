@@ -111,24 +111,27 @@ class DQN(nn.Module):
 
     def forward(self, sentence_idx):
         embeds = self.word_embeddings(sentence_idx)
-        x, _ = self.lstm(embeds.view(len(sentence_idx), 1, -1))
-        x = self.nn1(x.view(x.size(0), -1))
+        _, (h_n, _) = self.lstm(embeds.view(len(sentence_idx), 1, -1))
+        # h_n => last cell's hidden state
+        # print("LSTM_out", h_n.view(h_n.size(0), -1).shape)
+        x = self.nn1(h_n.view(h_n.size(0), -1))
         x = self.nn2(x.view(x.size(0), -1))
         return self.head(x.view(x.size(0), -1))
 
 
 ### Training loop ###
 num_episodes = 50
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 GAMMA = 0.999
 EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 20
 TARGET_UPDATE = 10
+NUM_EPOCHS = 20
 
 MAX_SENTENCE_SIZE = 20
-n_actions = env.action_space.n
-
+# n_actions = env.action_space.n
+n_actions = 3
 VOCAB_SIZE = len(vocab_dict)
 print("Num_actions = ", n_actions)
 policy_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
@@ -152,7 +155,6 @@ def select_action(state):
     if sample > eps_threshold:
         with torch.no_grad():
             temp = policy_net(state)
-            print("temp", temp.shape)
             return temp.max(1)[1].view(1, 1)
             # return policy_net(state).max(1)[1].view(1,1)
     else:
@@ -175,24 +177,21 @@ def optimize_model():
         return
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
-
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=device, dtype=torch.uint8)
-    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-
-    state_batch = torch.cat(batch.state)
-    action_batch = torch.cat(batch.action)
+    # Compute Q value from policy net.
+    state_action_values = torch.zeros(BATCH_SIZE, 1, device=device)
+    for i in range(BATCH_SIZE):
+        state_action_values[i] = policy_net(batch.state[i])[0][batch.action[i]]
     reward_batch = torch.cat(batch.reward)
+    # Get expected max value for the state from target net.
+    next_state_values = torch.zeros(BATCH_SIZE, 1, device=device)
 
-    # Compute current Q from policy net.
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
-
-    # Get target Q values from target net.
-    next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+    for i in range(BATCH_SIZE):
+        if batch.next_state[i] is not None:
+            next_state_values[i] = target_net(batch.next_state[i]).max(1)[0]
 
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
-    loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+    loss = F.smooth_l1_loss(state_action_values, expected_state_action_values)
 
     optimizer.zero_grad()
     loss.backward()
@@ -211,17 +210,31 @@ def read_sentences(line):
     sent2 = []
     for i in range(len(sent1_space)):
         node_raw = sent1_space[i].split(',')
-        node = [[node_raw[0], node_raw[1], node_raw[2]], node_raw[3], [node_raw[4], node_raw[5], node_raw[6]]]
+        par_id = node_raw[2]
+        if '.' in par_id:
+            par_id = float(par_id)
+        else:
+            par_id = int(par_id)
+        child_id = int(node_raw[6])
+        node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
         sent1.append(node)
     for i in range(len(sent2_space)):
         node_raw = sent2_space[i].split(',')
-        node = [[node_raw[0], node_raw[1], node_raw[2]], node_raw[3], [node_raw[4], node_raw[5], node_raw[6]]]
+        par_id = node_raw[2]
+        if '.' in par_id:
+            par_id = float(par_id)
+        else:
+            par_id = int(par_id)
+        child_id = int(node_raw[6])
+        node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
         sent2.append(node)
     return sent1, sent2, label
 
 ### Learn from each training example ###
 with open('../data/' + train_file, 'r') as training_data:
-    for line in training_data:
+    for line_num, line in enumerate(training_data):
+        if(len(line) == 1):
+            continue
         sent1, sent2, label = read_sentences(line)
         # Run MAX_EPISODES episodes on each training example.
         for episode in range(num_episodes):
@@ -229,23 +242,24 @@ with open('../data/' + train_file, 'r') as training_data:
             env.setParams(sent1, sent2, label)
             state = prepare_sequence(sent1, sent2)
             for t in count():
-                print(t)
                 action = select_action(state)
                 _, reward, done, _ = env.step(action.item())
 
-                reward = torch.tensor([reward], device=device)
+                reward = torch.tensor([[reward]], device=device)
+                print(t, reward)
                 next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
                 if done:
                     next_state = None
-
+                # print(state, env.decode_action(action.item()), reward)
                 # Store transition into memory
                 memory.push(state, action, next_state, reward)
                 state = next_state
-
                 optimize_model()
                 if done:
                     episode_durations.append(t+1)
                     break
+            if episode % TARGET_UPDATE == 0:
+                target_net.load_state_dict(policy_net.state_dict())
 
 # save model
 torch.save(policy_net.state_dict(), save_path)

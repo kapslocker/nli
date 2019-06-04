@@ -79,17 +79,29 @@ def read_sick(filename):
                     i = i + 1
 
 
-def prepare_sick(nlp, filename):
-    with open('../data/' + filename, 'r') as data_file:
-        for line in data_file:
-            arr = line.split('\t')
-            a = arr[0]
-            b = arr[1]
-            c = arr[2]
-            dep_tree = find_deptree(nlp, b)
-            for ele in dep_tree:
-                print(ele,',')
-            return
+def read_sizes(filename):
+	sizes = 0
+	maxlen = 0
+	count = 0
+	set_max_len = 20
+	long_sent = []
+	with open('../data/' + filename, 'r') as data_file:
+		for line in data_file:
+			arr = line.split('\t')
+			a = arr[0].split(' ')
+			b = arr[1].split(' ')
+			c = arr[2]
+			if(len(a) > set_max_len):
+				count += 1
+			if(len(b) > set_max_len):
+				count += 1
+			if len(a) > maxlen:
+				maxlen = len(a)
+				long_sent = a
+			if len(b) > maxlen:
+				maxlen = len(b)
+				long_sent = b
+	print(maxlen, long_sent, count)
 
 def build_dict(filename):
 	# Store dict {word: idx} in memory
@@ -156,5 +168,6 @@ def print_sick_trees(nlp, filename):
 # prepare_sick('sick_train.txt')
 
 if __name__ == '__main__':
-	nlp = StanfordCoreNLP("http://127.0.0.1:9000")
-	print_sick_trees(nlp, 'sick_train.txt')
+	prepare_sick('sick_train.txt')
+	# nlp = StanfordCoreNLP("http://127.0.0.1:9000")
+	# print_sick_trees(nlp, 'sick_train.txt')

@@ -73,13 +73,13 @@ class TreeEnv(gym.Env):
     def _get_reward(self, old_tree, is_correct):
         '''
         Handle rewards here.
-        1. invalid action taken => -10
+        1. invalid action taken => -1000
         2. tree edit action taken => +1 (went closer) / -1 (went further)
         3. correct decision action taken => +20
         4. incorrect decision action taken => -20
         '''
         if is_correct == 0:
-            return -10
+            return -100.0
         elif is_correct == 1:
             # prev_dist = self._finddist(old_tree, self.hypothesis_tree)
             # curr_dist = self._finddist(self.premise_tree, self.hypothesis_tree)
@@ -87,11 +87,11 @@ class TreeEnv(gym.Env):
             #     return 1
             # else:
             #     return -1
-            return -1
+            return -1.0
         elif is_correct == 2:
-            return 20
+            return 20.0
         else:
-            return -20
+            return -20.0
 
     def encode_tuples(self, list_of_tuples):
         n_categories = len(self.action_name_map)
