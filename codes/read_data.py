@@ -79,6 +79,9 @@ def read_sick(filename):
                     i = i + 1
 
 
+def read_snli(filename):
+	
+
 def read_sizes(filename):
 	sizes = 0
 	maxlen = 0

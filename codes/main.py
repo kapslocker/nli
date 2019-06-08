@@ -15,11 +15,6 @@ import bcolz
 
 
 env = gym.make('tree-v0').unwrapped
-vocab_file = 'vocab.pkl'
-train_file = 'sick_train_deptree.txt'
-test_file = 'sick_test_deptree.txt'
-glove_path = '../data/glove.6B'
-save_path = '../models/save.pth'
 #gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -29,6 +24,7 @@ Transition = namedtuple('Transition',
                        ('state', 'action', 'next_state', 'reward'))
 
 class ReplayMemory(object):
+    ''' Queue of Transition objects.'''
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
@@ -47,8 +43,26 @@ class ReplayMemory(object):
         return len(self.memory)
 
 
+# Variables.
+
 EMBEDDING_DIM = 50
 HIDDEN_DIM = 50
+NUM_EPISODES = 50
+BATCH_SIZE = 32
+GAMMA = 0.999
+EPS_START = 0.9
+EPS_END = 0.05
+EPS_DECAY = 20
+TARGET_UPDATE = 10
+NUM_EPOCHS = 10
+MEM_CAPACITY = 10000
+
+vocab_file = 'vocab.pkl'
+train_file = 'sick_train_deptree.txt'
+test_file = 'sick_test_deptree.txt'
+GLOVE_PATH = '../data/glove.6B'
+save_path = '../models/save.pth'
+
 
 ##################
 episode_durations = []
@@ -57,9 +71,9 @@ episode_durations = []
 with open(vocab_file, 'rb') as vocab:
     vocab_dict = pickle.load(vocab)
 
-vectors = bcolz.open(f'{glove_path}/6B.50.dat')[:]
-words = pickle.load(open(f'{glove_path}/6B.50_words.pkl', 'rb'))
-word2idx = pickle.load(open(f'{glove_path}/6B.50_idx.pkl', 'rb'))
+vectors = bcolz.open(GLOVE_PATH + '/6B.50.dat')[:]
+words = pickle.load(open(GLOVE_PATH + '/6B.50_words.pkl', 'rb'))
+word2idx = pickle.load(open(GLOVE_PATH + '/6B.50_idx.pkl', 'rb'))
 glove = {w: vectors[word2idx[w]] for w in words}
 
 
@@ -74,16 +88,19 @@ for i, word in enumerate(vocab_dict.keys()):
         weights_matrix[i] = glove[word]
         words_found += 1
     except KeyError:
-        weights_matrix[i] = np.random.normal(scale=0.6, size=(EMBEDDING_DIM, ))
+        weights_matrix[i] = np.random.normal(scale=0.5, size=(EMBEDDING_DIM, ))
         word2idx[word] = len(word2idx)
 
-def dep_tree_to_sent(sentence_tree): # tested
+def dep_tree_to_sent(sentence_tree):
+    ''' Get sentence from dependency tree. 
+        TODO: Get rid of this.'''
     words = [[int(node[2][2]), node[2][0]] for node in sentence_tree]
     words = sorted(words)
     sent_list = [tup[1] for tup in words]
     return sent_list
 
 def prepare_sequence(premise, hypothesis):
+    ''' Get list of vocab dict indices of words, appended as hypothesis : premise.'''
     prem_list = dep_tree_to_sent(premise)
     hypo_list = dep_tree_to_sent(hypothesis)
     sentence = hypo_list + prem_list
@@ -91,15 +108,15 @@ def prepare_sequence(premise, hypothesis):
     return torch.tensor(indices, dtype=torch.long, device=device)
 
 
-### DQN Module ###
 class DQN(nn.Module):
+    ''' DQN Module. '''
     # input is concatenated hypothesis, premise tree pair.
     # ['This', 'is', 'the', 'hypothesis'] + ['This', 'is', 'the', 'premise']
     # outputs are q values for 5 * MAX_SENTENCE_SIZE * MAX_SENTENCE_SIZE actions.
     def __init__(self, embedding_dim, hidden_dim, outputs):
         super(DQN, self).__init__()
         self.hidden_dim = hidden_dim
-        num_embeddings, temp = weights_matrix.shape
+        num_embeddings, _ = weights_matrix.shape
         self.word_embeddings = nn.Embedding(num_embeddings, embedding_dim)
         self.word_embeddings.weight.data.copy_(torch.from_numpy(weights_matrix))
         # self.word_embeddings.load_state_dict({'weight':weights_matrix})
@@ -120,16 +137,8 @@ class DQN(nn.Module):
 
 
 ### Training loop ###
-num_episodes = 50
-BATCH_SIZE = 32
-GAMMA = 0.999
-EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 20
-TARGET_UPDATE = 10
-NUM_EPOCHS = 20
 
-MAX_SENTENCE_SIZE = 20
+MAX_SENTENCE_SIZE = env.MAX_SENTENCE_SIZE
 # n_actions = env.action_space.n
 n_actions = 3
 VOCAB_SIZE = len(vocab_dict)
@@ -140,7 +149,7 @@ target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()   # Do not train target network
 
 optimizer = optim.RMSprop(policy_net.parameters())
-memory = ReplayMemory(10000)
+memory = ReplayMemory(MEM_CAPACITY)
 
 
 ### Exploration - exploitation step. ###
@@ -161,6 +170,7 @@ def select_action(state):
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
 
 def best_decision(state):
+    ''' Find best decision action for current state. '''
     with torch.no_grad():
         max_act = -1
         max_val = -10000
@@ -171,8 +181,8 @@ def best_decision(state):
                 max_val = profits[action]
         return max_act
 
-### Updates from replay memory ###
 def optimize_model():
+    ''' Update policy net from replay memory. '''
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
@@ -201,13 +211,16 @@ def optimize_model():
 
 
 def read_sentences(line):
+    ''' Parse raw dependency tree dataset line and return trees, relationship label. '''
+    if(len(line) == 1):
+        return False, [], [], ""
     line = line.split('\n')[0]
     a = line.split('\t')
     label = a[2].strip()
     sent1_space = a[0].strip().split(' ')
     sent2_space = a[1].strip().split(' ')
-    sent1 = []
-    sent2 = []
+    prem_tree = []
+    hypo_tree = []
     for i in range(len(sent1_space)):
         node_raw = sent1_space[i].split(',')
         par_id = node_raw[2]
@@ -217,7 +230,7 @@ def read_sentences(line):
             par_id = int(par_id)
         child_id = int(node_raw[6])
         node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
-        sent1.append(node)
+        prem_tree.append(node)
     for i in range(len(sent2_space)):
         node_raw = sent2_space[i].split(',')
         par_id = node_raw[2]
@@ -227,65 +240,77 @@ def read_sentences(line):
             par_id = int(par_id)
         child_id = int(node_raw[6])
         node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
-        sent2.append(node)
-    return sent1, sent2, label
+        hypo_tree.append(node)
+    premise = dep_tree_to_sent(prem_tree)
+    hypothesis = dep_tree_to_sent(hypo_tree)
+    if (len(premise) > env.MAX_SENTENCE_SIZE) or (len(hypothesis) > env.MAX_SENTENCE_SIZE) :
+        return  False, [], [], ""
+    return True, prem_tree, hypo_tree, label
+
+
+
+def test_model():
+    ''' Go into eval mode and test model. '''
+    policy_net.eval()
+    correct = 0
+    total = 0
+    with open('../data/' + test_file, 'r') as test_data:
+        for line in test_data:
+            isvalid, sent1, sent2, label = read_sentences(line)
+            if not isvalid:
+                continue
+            state = prepare_sequence(sent1, sent2)
+            action = best_decision(state)
+            gold = -1
+            if label == 'ENTAILMENT':
+                gold = 0
+            elif label == 'NEUTRAL':
+                gold = 1
+            else:
+                gold = 2
+            if action == gold:
+                correct += 1
+            total += 1
+    policy_net.train() # re enter train mode.
+    return (correct / total) * 100
+
 
 ### Learn from each training example ###
-with open('../data/' + train_file, 'r') as training_data:
-    for line_num, line in enumerate(training_data):
-        if(len(line) == 1):
-            continue
-        sent1, sent2, label = read_sentences(line)
-        # Run MAX_EPISODES episodes on each training example.
-        for episode in range(num_episodes):
-            env.reset()
-            env.setParams(sent1, sent2, label)
-            state = prepare_sequence(sent1, sent2)
-            for t in count():
-                action = select_action(state)
-                _, reward, done, _ = env.step(action.item())
+def train_model():
+    for epoch in range(NUM_EPOCHS):
+        with open('../data/' + train_file, 'r') as training_data:
+            for line in training_data:
+                isvalid, sent1, sent2, label = read_sentences(line)
+                if not isvalid:
+                    continue
+                # Run NUM_EPISODES episodes on each training example.
+                for episode in range(NUM_EPISODES):
+                    env.reset()
+                    env.setParams(sent1, sent2, label)
+                    state = prepare_sequence(sent1, sent2)
+                    for t in count():
+                        action = select_action(state)
+                        _, reward, done, _ = env.step(action.item())
 
-                reward = torch.tensor([[reward]], device=device)
-                print(t, reward)
-                next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
-                if done:
-                    next_state = None
-                # print(state, env.decode_action(action.item()), reward)
-                # Store transition into memory
-                memory.push(state, action, next_state, reward)
-                state = next_state
-                optimize_model()
-                if done:
-                    episode_durations.append(t+1)
-                    break
-            if episode % TARGET_UPDATE == 0:
-                target_net.load_state_dict(policy_net.state_dict())
+                        reward = torch.tensor([[reward]], device=device)
+                        print(t, reward)
+                        next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
+                        if done:
+                            next_state = None
+                        # print(state, env.decode_action(action.item()), reward)
+                        # Store transition into memory
+                        memory.push(state, action, next_state, reward)
+                        state = next_state
+                        optimize_model()
+                        if done:
+                            episode_durations.append(t+1)
+                            break
+                    if episode % TARGET_UPDATE == 0:
+                        target_net.load_state_dict(policy_net.state_dict())
+        accuracy = test_model()
+        epoch_result = 'epoch {}: {}'.format(epoch, accuracy)
+        print(epoch_result)
+        # save model
+        torch.save(policy_net.state_dict(), save_path)
 
-# save model
-torch.save(policy_net.state_dict(), save_path)
-
-# load model
-# model = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
-# model.load_state_dict(torch.load(save_path))
-# model.eval()
-# Test now.
-correct = 0
-total = 0
-policy_net.eval() # In evaluation mode now.
-with open('../data/' + test_file, 'r') as test_data:
-    for line in test_data:
-        sent1, sent2, label = read_sentences(line)
-        state = prepare_sequence(sent1, sent2)
-        action = best_decision(state)
-        gold = -1
-        if label == 'ENTAILMENT':
-            gold = 0
-        elif label == 'NEUTRAL':
-            gold = 1
-        else:
-            gold = 2
-        if action == gold:
-            correct += 1
-        total += 1
-
-print("Accuracy: ", correct,"/", total)
+train_model()
