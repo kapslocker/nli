@@ -56,6 +56,8 @@ EPS_DECAY = 20
 TARGET_UPDATE = 10
 NUM_EPOCHS = 10
 MEM_CAPACITY = 10000
+IS_FILE_CHECK = False
+
 
 vocab_file = 'vocab.pkl'
 train_file = 'sick_train_deptree.txt'
@@ -276,12 +278,15 @@ def test_model():
 
 
 ### Learn from each training example ###
+
 def train_model():
     for epoch in range(NUM_EPOCHS):
         with open('../data/' + train_file, 'r') as training_data:
             for line in training_data:
                 isvalid, sent1, sent2, label = read_sentences(line)
                 if not isvalid:
+                    continue
+                if IS_FILE_CHECK:
                     continue
                 # Run NUM_EPISODES episodes on each training example.
                 for episode in range(NUM_EPISODES):
@@ -307,10 +312,15 @@ def train_model():
                             break
                     if episode % TARGET_UPDATE == 0:
                         target_net.load_state_dict(policy_net.state_dict())
+        if IS_FILE_CHECK:
+            print('File check passed.')
         accuracy = test_model()
         epoch_result = 'epoch {}: {}'.format(epoch, accuracy)
         print(epoch_result)
         # save model
         torch.save(policy_net.state_dict(), save_path)
 
+
+
+IS_FILE_CHECK = True
 train_model()
