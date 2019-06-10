@@ -17,7 +17,7 @@ import bcolz
 env = gym.make('tree-v0').unwrapped
 #gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("device = ", device)
 
 ### Replay Memory ###
 Transition = namedtuple('Transition',
@@ -47,7 +47,7 @@ class ReplayMemory(object):
 
 EMBEDDING_DIM = 50
 HIDDEN_DIM = 50
-NUM_EPISODES = 50
+NUM_EPISODES = 10
 BATCH_SIZE = 32
 GAMMA = 0.999
 EPS_START = 0.9
@@ -56,6 +56,7 @@ EPS_DECAY = 20
 TARGET_UPDATE = 10
 NUM_EPOCHS = 10
 MEM_CAPACITY = 10000
+MAX_STEPS = 10
 IS_FILE_CHECK = False
 
 
@@ -63,7 +64,7 @@ vocab_file = 'vocab.pkl'
 train_file = 'sick_train_deptree.txt'
 test_file = 'sick_test_deptree.txt'
 GLOVE_PATH = '../data/glove.6B'
-save_path = '../models/save.pth'
+save_path = '../models/'
 
 
 ##################
@@ -173,15 +174,14 @@ def select_action(state):
 
 def best_decision(state):
     ''' Find best decision action for current state. '''
-    with torch.no_grad():
-        max_act = -1
-        max_val = -10000
-        profits = policy_net(state)
-        for action in range(3):
-            if profits[0][action] > max_val:
-                max_act = action
-                max_val = profits[0][action]
-        return max_act
+    max_act = -1
+    max_val = -10000
+    profits = policy_net(state)
+    for action in range(3):
+        if profits[0][action] > max_val:
+            max_act = action
+            max_val = profits[0][action]
+    return max_act
 
 def optimize_model():
     ''' Update policy net from replay memory. '''
@@ -299,12 +299,15 @@ def train_model():
                     env.reset()
                     env.setParams(sent1, sent2, label)
                     state = prepare_sequence(sent1, sent2)
+                    # Run each episode for atmost MAX_STEPS steps.
                     for t in count():
-                        action = select_action(state)
+                        if t < MAX_STEPS:
+                            action = select_action(state)
+                        else:
+                            action = torch.tensor([[best_decision(state)]], device=device, dtype=torch.long)
                         _, reward, done, _ = env.step(action.item())
 
                         reward = torch.tensor([[reward]], device=device)
-                        print(t, reward)
                         next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
                         if done:
                             next_state = None
@@ -323,10 +326,11 @@ def train_model():
         accuracy = test_model()
         epoch_result = 'epoch {}: {}'.format(epoch, accuracy)
         print(epoch_result)
-        # save model
-        torch.save(policy_net.state_dict(), save_path)
+        # save mode
+        save_file_name = save_path + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)
+        torch.save(policy_net.state_dict(), save_file_name)
 
+print("Episode durations:", episode_durations)
 
-
-IS_FILE_CHECK = True
+IS_FILE_CHECK = False
 train_model()
