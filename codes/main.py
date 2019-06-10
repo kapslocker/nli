@@ -178,9 +178,9 @@ def best_decision(state):
         max_val = -10000
         profits = policy_net(state)
         for action in range(3):
-            if profits[action] > max_val:
+            if profits[0][action] > max_val:
                 max_act = action
-                max_val = profits[action]
+                max_val = profits[0][action]
         return max_act
 
 def optimize_model():
@@ -226,6 +226,9 @@ def read_sentences(line):
     for i in range(len(sent1_space)):
         node_raw = sent1_space[i].split(',')
         par_id = node_raw[2]
+        child_id = node_raw[6]
+        if par_id == '' or child_id == '':
+            return False, [], [], ""
         if '.' in par_id:
             par_id = float(par_id)
         else:
@@ -236,6 +239,9 @@ def read_sentences(line):
     for i in range(len(sent2_space)):
         node_raw = sent2_space[i].split(',')
         par_id = node_raw[2]
+        child_id = node_raw[6]
+        if par_id == '' or child_id == '':
+            return False, [], [], ""
         if '.' in par_id:
             par_id = float(par_id)
         else:

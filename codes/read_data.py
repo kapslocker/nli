@@ -80,6 +80,7 @@ def read_sick(filename):
 
 
 def read_snli(filename):
+	pass
 	
 
 def read_sizes(filename):
@@ -106,28 +107,91 @@ def read_sizes(filename):
 				long_sent = b
 	print(maxlen, long_sent, count)
 
-def build_dict(filename):
+def dep_tree_to_sent(sentence_tree):
+    ''' Get sentence from dependency tree. 
+        TODO: Get rid of this.'''
+    words = [[int(node[2][2]), node[2][0]] for node in sentence_tree]
+    words = sorted(words)
+    sent_list = [tup[1] for tup in words]
+    return sent_list
+
+def read_sentences(line):
+    ''' Parse raw dependency tree dataset line and return trees, relationship label. '''
+    if(len(line) == 1):
+        return False, [], [], ""
+    line = line.split('\n')[0]
+    a = line.split('\t')
+    label = a[2].strip()
+    sent1_space = a[0].strip().split(' ')
+    sent2_space = a[1].strip().split(' ')
+    prem_tree = []
+    hypo_tree = []
+    for i in range(len(sent1_space)):
+        node_raw = sent1_space[i].split(',')
+        par_id = node_raw[2]
+        child_id = node_raw[6]
+        if par_id == '' or child_id == '':
+            return False, [], [], ""
+        if '.' in par_id:
+            par_id = float(par_id)
+        else:
+            par_id = int(par_id)
+        child_id = int(node_raw[6])
+        node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
+        prem_tree.append(node)
+    for i in range(len(sent2_space)):
+        node_raw = sent2_space[i].split(',')
+        par_id = node_raw[2]
+        child_id = node_raw[6]
+        if par_id == '' or child_id == '':
+            return False, [], [], ""
+        if '.' in par_id:
+            par_id = float(par_id)
+        else:
+            par_id = int(par_id)
+        child_id = int(node_raw[6])
+        node = [[node_raw[0], node_raw[1], par_id], node_raw[3], [node_raw[4], node_raw[5], child_id]]
+        hypo_tree.append(node)
+    premise = dep_tree_to_sent(prem_tree)
+    hypothesis = dep_tree_to_sent(hypo_tree)
+    if (len(premise) > 20) or (len(hypothesis) > 20) :
+        return  False, [], [], ""
+    return True, premise, hypothesis, label
+
+def build_dict(idx, filename, is_tree = False):
 	# Store dict {word: idx} in memory
-	i = 0
-	j = 0
-	idx = dict()
 	with open('../data/' + filename, 'r') as datafile:
 		for line in datafile:
-			arr = line.split('\t')
-			sent_a = arr[0].split(' ')
-			sent_b = arr[1].split(' ')
+			if not is_tree:
+				arr = line.split('\t')
+				sent_a = arr[0].split(' ')
+				sent_b = arr[1].split(' ')
+			else:
+				is_valid, sent_a, sent_b, _ = read_sentences(line)
+				if not is_valid:
+					continue
 			for word in sent_a:
+				# if '\'' in word:
+				# 	a = word.split('\'')
+				# 	if a[0] not in idx:
+				# 		idx[a[0]] = len(idx)
+				# 	if '\'' + a[1] not in idx:
+				# 		idx['\'' + a[1]] = len(idx)
 				if word not in idx:
-					idx[word] = i
-					i = i + 1
+					idx[word] = len(idx)
 			for word in sent_b:
+				# if '\'' in word:
+				# 	a = word.split('\'')
+				# 	if a[0] not in idx:
+				# 		idx[a[0]] = len(idx)
+				# 	if '\'' + a[1] not in idx:
+				# 		idx['\'' + a[1]] = len(idx)
 				if word not in idx:
-					idx[word] = i
-					i = i + 1
+					idx[word] = len(idx)
 	with open('vocab.pkl', 'wb') as f:
 		pickle.dump(idx, f, pickle.HIGHEST_PROTOCOL)
-	print('VOCAB_SIZE', i)
-	return i
+	print('VOCAB_SIZE', len(idx))
+	return idx
 
 
 def print_sick_trees(nlp, filename):
@@ -171,6 +235,9 @@ def print_sick_trees(nlp, filename):
 # prepare_sick('sick_train.txt')
 
 if __name__ == '__main__':
-	prepare_sick('sick_train.txt')
+	# prepare_sick('sick_train.txt')
 	# nlp = StanfordCoreNLP("http://127.0.0.1:9000")
 	# print_sick_trees(nlp, 'sick_train.txt')
+	idx = dict()
+	idx = build_dict(idx, 'sick_train_deptree.txt', True)
+	idx = build_dict(idx, 'sick_test_deptree.txt', True)
