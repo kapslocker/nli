@@ -5,7 +5,6 @@ import random
 import numpy as np
 from collections import namedtuple
 from itertools import count
-from PIL import Image
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -56,7 +55,7 @@ EPS_DECAY = 20
 TARGET_UPDATE = 10
 NUM_EPOCHS = 10
 MEM_CAPACITY = 10000
-MAX_STEPS = 10
+MAX_STEPS = 5 # Usually learns in 3-4 timesteps for each training example.
 IS_FILE_CHECK = False
 
 
@@ -142,8 +141,8 @@ class DQN(nn.Module):
 ### Training loop ###
 
 MAX_SENTENCE_SIZE = env.MAX_SENTENCE_SIZE
-# n_actions = env.action_space.n
-n_actions = 3
+n_actions = env.action_space.n
+# n_actions = 3
 VOCAB_SIZE = len(vocab_dict)
 print("Num_actions = ", n_actions)
 policy_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
@@ -199,7 +198,7 @@ def optimize_model():
 
     for i in range(BATCH_SIZE):
         if batch.next_state[i] is not None:
-            next_state_values[i] = target_net(batch.next_state[i]).max(1)[0]
+            next_state_values[i] = target_net(batch.next_state[i]).max(1)[0].detach()
 
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -284,6 +283,7 @@ def test_model():
 
 
 ### Learn from each training example ###
+# num_iterations = NUM_EPOCHS * DATA_SIZE * NUM_EPISODES * MAX_STEPS = 10 * 10000 * 10 * 5 = 5000000
 
 def train_model():
     for epoch in range(NUM_EPOCHS):
@@ -306,7 +306,6 @@ def train_model():
                         else:
                             action = torch.tensor([[best_decision(state)]], device=device, dtype=torch.long)
                         _, reward, done, _ = env.step(action.item())
-
                         reward = torch.tensor([[reward]], device=device)
                         next_state = prepare_sequence(env.premise_tree, env.hypothesis_tree)
                         if done:
@@ -332,5 +331,7 @@ def train_model():
 
 print("Episode durations:", episode_durations)
 
+# enable to check data files.
 IS_FILE_CHECK = False
+# train model.
 train_model()
