@@ -4,6 +4,7 @@ import pickle
 import requests
 import json
 import time
+import random
 
 def unitoStr(word):
 	if( type(word) != str):
@@ -231,6 +232,31 @@ def print_sick_trees(nlp, filename):
 
 
 
+def balance_dataset(filename):
+	a = []
+	b = []
+	c = []
+	with open('../data/' + filename, 'r') as datafile:
+		for line in datafile:
+			if len(line) == 1:
+				continue
+			label = line.split('\n')[0].split('\t')[2].strip()
+			if label == 'NEUTRAL':
+				a.append(line)
+			elif label == 'ENTAILMENT':
+				b.append(line)
+			else:
+				c.append(line)
+	sample_size = min(len(a), len(b), len(c))
+	sample = []
+	sample += [a[i] for i in random.sample(range(len(a)), sample_size)]
+	sample += [b[i] for i in random.sample(range(len(b)), sample_size)]
+	sample += [c[i] for i in random.sample(range(len(c)), sample_size)]
+	with open('../data/' + filename.split('.')[0] + '_balanced.txt', 'w') as outfile:
+		for line in sample:
+			outfile.write(line + '\n')
+
+
 # read_sick('SICK.txt')
 # prepare_sick('sick_train.txt')
 
@@ -238,6 +264,7 @@ if __name__ == '__main__':
 	# prepare_sick('sick_train.txt')
 	# nlp = StanfordCoreNLP("http://127.0.0.1:9000")
 	# print_sick_trees(nlp, 'sick_train.txt')
-	idx = dict()
-	idx = build_dict(idx, 'sick_train_deptree.txt', True)
-	idx = build_dict(idx, 'sick_test_deptree.txt', True)
+	# idx = dict()
+	# idx = build_dict(idx, 'sick_train_deptree.txt', True)
+	# idx = build_dict(idx, 'sick_test_deptree.txt', True)
+	balance_dataset('sick_train_deptree.txt')

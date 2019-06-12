@@ -66,7 +66,7 @@ IS_FILE_CHECK = False
 
 
 vocab_file = 'vocab.pkl'
-train_file = 'sick_train_deptree.txt'
+train_file = 'sick_train_deptree_balanced.txt'
 test_file = 'sick_test_deptree.txt'
 GLOVE_PATH = '../data/glove.6B'
 save_path = '../models/'
@@ -182,7 +182,6 @@ def select_action(state):
     if sample > eps_threshold:
         with torch.no_grad():
             temp = policy_net(state)
-            print(temp.shape)
             return temp.max(1)[1].view(1, 1)
             # return policy_net(state).max(1)[1].view(1,1)
     else:
@@ -273,12 +272,16 @@ def read_sentences(line):
 
 
 
-def test_model():
+def test_model(file_type):
     ''' Go into eval mode and test model. '''
     policy_net.eval()
     correct = 0
     total = 0
-    with open('../data/' + test_file, 'r') as test_data:
+    if file_type == 1:
+        data_file = test_file
+    else:
+        data_file = train_file
+    with open('../data/' + data_file, 'r') as test_data:
         for line in test_data:
             isvalid, sent1, sent2, label = read_sentences(line)
             if not isvalid:
@@ -339,8 +342,9 @@ def train_model():
                         target_net.load_state_dict(policy_net.state_dict())
         if IS_FILE_CHECK:
             print('File check passed.')
-        accuracy = test_model()
-        epoch_result = 'epoch {}: {}'.format(epoch, accuracy)
+        train_accuracy = test_model(0)
+        test_accuracy = test_model(1)
+        epoch_result = 'epoch {}: {}, {}'.format(epoch, train_accuracy, test_accuracy)
         print(epoch_result)
         # save mode
         save_file_name = save_path + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}_2rnn.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)

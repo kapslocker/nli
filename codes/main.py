@@ -11,7 +11,7 @@ import torch.optim as optim
 import pickle
 import torch.nn.functional as F
 import bcolz
-
+import argparse
 
 env = gym.make('tree-v0').unwrapped
 #gpu
@@ -43,6 +43,10 @@ class ReplayMemory(object):
 
 
 # Variables.
+parser = argparse.ArgumentParser()
+parser.add_argument('num_actions', type=int, default=0, help="0 for all actions, > 0 for reduced set.")
+args = parser.parse_args()
+print(args)
 
 EMBEDDING_DIM = 50
 HIDDEN_DIM = 50
@@ -141,8 +145,11 @@ class DQN(nn.Module):
 ### Training loop ###
 
 MAX_SENTENCE_SIZE = env.MAX_SENTENCE_SIZE
-n_actions = env.action_space.n
-# n_actions = 3
+if args.num_actions > 0:
+    n_actions = 3
+else:
+    n_actions = env.action_space.n
+
 VOCAB_SIZE = len(vocab_dict)
 print("Num_actions = ", n_actions)
 policy_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
