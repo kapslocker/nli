@@ -11,7 +11,7 @@ import torch.optim as optim
 import pickle
 import torch.nn.functional as F
 import bcolz
-
+import argparse
 
 env = gym.make('tree-v0').unwrapped
 #gpu
@@ -43,6 +43,12 @@ class ReplayMemory(object):
 
 
 # Variables.
+
+parser = argparse.ArgumentParser()
+parser.add_argument('num_actions', type=int, default=0, help="0 for all actions, > 0 for reduced set.")
+args = parser.parse_args()
+print(args)
+
 
 EMBEDDING_DIM = 50
 HIDDEN_DIM = 50
@@ -127,7 +133,7 @@ class DQN(nn.Module):
         # also learn embeddings
         self.lstm1 = nn.LSTM(embedding_dim, hidden_dim)
         self.lstm2 = nn.LSTM(embedding_dim, hidden_dim)
-        self.nn1 = nn.Linear(hidden_dim, hidden_dim)
+        self.nn1 = nn.Linear(2 * hidden_dim, hidden_dim)
         self.nn2 = nn.Linear(hidden_dim, hidden_dim)
         self.head = nn.Linear(hidden_dim, outputs)
 
@@ -138,16 +144,20 @@ class DQN(nn.Module):
         hypo_embeds = self.word_embeddings(hypo_idx)
         _, (prem_n, _) = self.lstm1(prem_embeds.view(len(prem_idx), 1, -1))
         _, (hypo_n, _) = self.lstm2(hypo_embeds.view(len(hypo_idx), 1, -1))
-        x = torch.cat((prem_n.view(prem_n.size(0), -1), hypo_n.view(hypo_n.size(0), -1)), 0)
+        x = torch.cat((prem_n.view(prem_n.size(0), -1), hypo_n.view(hypo_n.size(0), -1)), 1)
         x = self.nn1(x.view(x.size(0), -1))
         x = self.nn2(x.view(x.size(0), -1))
-        return self.head(x.view(x.size(0), -1))
+        x = self.head(x.view(x.size(0), -1))
+        return x
 
 ### Training loop ###
 
 MAX_SENTENCE_SIZE = env.MAX_SENTENCE_SIZE
-n_actions = env.action_space.n
-# n_actions = 3
+if args.num_actions > 0:
+    n_actions = 3
+else:
+    n_actions = env.action_space.n
+
 VOCAB_SIZE = len(vocab_dict)
 print("Num_actions = ", n_actions)
 policy_net = DQN(EMBEDDING_DIM, HIDDEN_DIM, n_actions).to(device)
@@ -172,6 +182,7 @@ def select_action(state):
     if sample > eps_threshold:
         with torch.no_grad():
             temp = policy_net(state)
+            print(temp.shape)
             return temp.max(1)[1].view(1, 1)
             # return policy_net(state).max(1)[1].view(1,1)
     else:
@@ -332,14 +343,14 @@ def train_model():
         epoch_result = 'epoch {}: {}'.format(epoch, accuracy)
         print(epoch_result)
         # save mode
-        save_file_name = save_path + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)
+        save_file_name = save_path + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}_2rnn.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)
         torch.save(policy_net.state_dict(), save_file_name)
 
 print("Episode durations:", episode_durations)
 
 
 # enable to check data files.
-IS_FILE_CHECK = True
+IS_FILE_CHECK = False
 
 # train model.
 train_model()
