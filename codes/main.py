@@ -286,7 +286,7 @@ def test_model():
                 correct += 1
             total += 1
     policy_net.train() # re enter train mode.
-    return (correct / total) * 100
+    return (float(correct) / float(total)) * 100
 
 
 ### Learn from each training example ###
@@ -341,4 +341,15 @@ print("Episode durations:", episode_durations)
 # enable to check data files.
 IS_FILE_CHECK = False
 # train model.
-train_model()
+# train_model()
+
+def test_model_from_file(modelfile):
+    policy_net.load_state_dict(torch.load(modelfile))
+    accuracy = test_model()
+    return accuracy
+
+for epoch in range(NUM_EPOCHS):
+    modelfile = '../models/' + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)
+    print(modelfile)
+    accuracy = test_model_from_file(modelfile)
+    print(accuracy)
