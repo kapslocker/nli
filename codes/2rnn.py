@@ -361,12 +361,13 @@ IS_FILE_CHECK = False
 
 def test_model_from_file(modelfile):
     policy_net.load_state_dict(torch.load(modelfile))
-    accuracy = test_model()
-    return accuracy
+    train_accuracy = test_model(0)
+    test_accuracy = test_model(1)
+    return train_accuracy, test_accuracy
 
 for epoch in range(NUM_EPOCHS):
     modelfile = '../models/' + '/epoch_{}_type_{}_maxsteps_{}_numepisodes_{}_2rnn.pth'.format(epoch, n_actions, MAX_STEPS, NUM_EPISODES)
     print(modelfile)
-    accuracy = test_model_from_file(modelfile)
-    print(accuracy)
+    train_accuracy, test_accuracy = test_model_from_file(modelfile)
+    print(epoch, train_accuracy, test_accuracy)
 
