@@ -13,10 +13,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      # - name: Install dependencies
-      #   run: |
-      #     python -m pip install --upgrade pip
-      #     pip install wheel
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
       - name: Update version
         run: |
           $ref = "${{ github.ref }}"
@@ -31,9 +31,6 @@ jobs:
           Write-Host $version
           $value = '__version__="{0}"' -f $version
           Set-Content -Path "tree-env/version.py" -Value $value
-          git add --all
-          git commit -m "Update version number"
-          git push origin $branch
       - name: Build extension
         run: |
           cd tree-env
