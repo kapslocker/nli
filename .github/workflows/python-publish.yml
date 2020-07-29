@@ -19,6 +19,8 @@ jobs:
           pip install wheel
       - name: Build extension
         run: |
+          Write-Host "Run Id" $GITHUB_RUN_ID
+          Write-Host "REF" $GITHUB_REF
           cd tree-env
           python setup.py bdist_wheel -d ./
       - name: Upload wheel artifact
