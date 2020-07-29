@@ -2,3 +2,5 @@ data/*
 SICK/*
 codes/vocab.pkl
 models/*
+*.whl
+**/*.egg-info/
