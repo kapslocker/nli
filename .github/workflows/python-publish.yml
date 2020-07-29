@@ -19,8 +19,8 @@ jobs:
           pip install wheel
       - name: Update version
         run: |
-          $ref = ${{ github.run_id }}.ToString()
-          $runNumber = ${{ github.run_number }}.ToString()
+          $ref = ${{ github.ref }}
+          $runNumber = ${{ github.run_number }}
           $branch = $ref.substring(11)
           Write-Host $branch
           $branch_ver = "0"
