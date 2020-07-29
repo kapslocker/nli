@@ -19,14 +19,16 @@ jobs:
           pip install wheel
       - name: Update version
         run: |
-          $ref = ${{ github.run_id }}
-          $runNumber = ${{ github.run_number }}
+          $ref = ${{ github.run_id }}.ToString()
+          $runNumber = ${{ github.run_number }}.ToString()
           $branch = $ref.substring(11)
+          Write-Host $branch
           $branch_ver = "0"
           if ($branch -ne "master") {
             $branch_ver = $branch.Split("/")[-1]
           }
           $version = "0.1.$branch_ver.$runNumber"
+          Write-Host $version
           $value = '__version__="{0}"' -f $version
           Set-Content -Path "tree-env/version.py" -Value $value
           git add --all
