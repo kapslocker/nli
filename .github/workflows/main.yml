@@ -40,7 +40,7 @@ jobs:
         with:
           creds: ${{ secrets.RELEASE_PIPELINE_AZ_CLI_SECRET }}
       - name: temp
-      - run: |
+        run: |
           echo ${{ steps.build_extension.base_version }}
       - name: Update version metadata
         uses: azure/CLI@v1
