@@ -44,7 +44,8 @@ jobs:
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            base_version=${${{ steps.build_extension.base_version }}//./-}
+            temp=${{ steps.build_extension.base_version }}
+            base_version="${temp//./-}"
             branch_version=${{ steps.build_extension.branch_version }}
             az storage container create --account-name aidlsclimetadata --name $base_version
             az storage blob upload --account-name aidlsclimetadata  -c $base_version -f "tree-env/$branch_version" -n $branch_version
