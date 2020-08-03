@@ -28,7 +28,7 @@ jobs:
           Write-Host "Creating version: $version"
           $value = '__version__="{0}"' -f $version
           Set-Content -Path "tree-env/version.py" -Value $value
-          cd tree-env
+          cd "tree-env"
           python setup.py bdist_wheel -d ./
           Set-Content -Path $branch_ver -Value $runNumber
           echo "::set-output name=base_version::$base_version"
