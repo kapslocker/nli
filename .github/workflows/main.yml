@@ -1,0 +1,68 @@
+name: Create release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tagName:
+        description: 'Tag name'
+        required: true
+
+jobs:
+  buildExtension:
+    name: Build extension
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Build extension
+        id: build_extension
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          $ref = "${{ github.ref }}"
+          $runNumber = "${{ github.run_number }}"
+          $branch = $ref.substring(11)
+          $branch_ver = $branch.Split("/")[-1]
+          $base_version = ${{ github.event.inputs.tagName }}
+          $version = "$base_version.$branch_ver.$runNumber"
+          Write-Host "Creating version: $version"
+          $value = '__version__="{0}"' -f $version
+          Set-Content -Path "tree-env/version.py" -Value $value
+          cd "tree-env"
+          python setup.py bdist_wheel -d ./
+          Set-Content -Path $branch_ver -Value $runNumber
+          echo "::set-output name=base_version::$base_version"
+          echo "::set-output name=branch_version::$branch_ver"
+      - name: Login to azure
+        uses: azure/login@v1.1
+        with:
+          creds: ${{ secrets.RELEASE_PIPELINE_AZ_CLI_SECRET }}
+      
+      - name: Update version metadata
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            $base_version = (${{ steps.build_extension.base_version }}).replace(".", "-")
+            $branch_version = ${{ steps.build_extension.branch_version }}
+            az storage container create --account-name aidlsclimetadata --name $base_version
+            az storage blob upload --account-name aidlsclimetadata  -c $base_version -f "tree-env/$branch_version" -n $branch_version
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.tagName }}
+          release_name: Release ${{ github.event.inputs.tagName }}
+          draft: false
+          prerelease: false
+      - name: Upload release asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: tree-env/*.whl
+          asset_name: treewhl
+          asset_content_type: application/zip
