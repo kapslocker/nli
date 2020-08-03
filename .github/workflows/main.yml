@@ -19,6 +19,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install wheel
+          apt-get install zip
           ref="${{ github.ref }}"
           runNumber="${{ github.run_number }}"
 
@@ -32,6 +33,7 @@ jobs:
           echo $value > "tree-env/version.py"
           cd "tree-env"
           python setup.py bdist_wheel -d ./
+          zip treewhl.zip *.whl
           echo $runNumber > $branch_ver
           echo "::set-output name=base_version::$base_version"
           echo "::set-output name=branch_version::$branch_ver"
@@ -67,6 +69,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: tree-env/*.whl
+          asset_path: tree-env/treewhl.whl
           asset_name: treewhl
           asset_content_type: application/zip
