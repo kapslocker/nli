@@ -70,5 +70,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: tree-env/treewhl.zip
-          asset_name: treewhl
+          asset_name: treewhl.zip
           asset_content_type: application/zip
