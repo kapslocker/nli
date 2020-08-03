@@ -9,8 +9,8 @@ on:
 
 jobs:
   buildExtension:
-    name: Build extension
-    runs-on: windows-latest
+    name: Build extension and create release
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -27,10 +27,10 @@ jobs:
           $version = "$base_version.$branch_ver.$runNumber"
           Write-Host "Creating version: $version"
           $value = '__version__="{0}"' -f $version
-          Set-Content -Path "tree-env/version.py" -Value $value
+          echo $value > "tree-env/version.py"
           cd "tree-env"
           python setup.py bdist_wheel -d ./
-          Set-Content -Path $branch_ver -Value $runNumber
+          echo $runNumber > $branch_ver
           echo "::set-output name=base_version::$base_version"
           echo "::set-output name=branch_version::$branch_ver"
       - name: Login to azure
