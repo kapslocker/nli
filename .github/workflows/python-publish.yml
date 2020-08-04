@@ -31,7 +31,6 @@ jobs:
           $runNumber = "${{ github.run_number }}"
           $branch = $ref.substring(11)
           Write-Host $branch
-          Write-Host ${{ github.event }}
           $branch_ver = "0"
           if ($branch -ne "master") {
             $branch_ver = $branch.Split("/")[-1]
