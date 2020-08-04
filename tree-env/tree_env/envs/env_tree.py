@@ -16,6 +16,9 @@ class TreeEnv(gym.Env):
         self.done = False
 
     def setParams(self, tree1, tree2, label):
+        '''
+        Sets the initial parameters
+        '''
         self.premise_tree = tree1
         self.hypothesis_tree = tree2
         self.label = label
