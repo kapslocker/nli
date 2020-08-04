@@ -20,7 +20,7 @@ jobs:
       - name: Check style
         if: ${{ github.event_name == 'pull_request' }}
         run: |
-          pylint -E aidls
+          pylint -E tree-env
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
