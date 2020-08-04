@@ -273,7 +273,7 @@ def read_sentences(line):
 
 
 def test_model(file_type):
-    ''' Go into eval mode and test model. '''
+    ''' test model by evaluation on test dataset. '''
     policy_net.eval()
     correct = 0
     total = 0
