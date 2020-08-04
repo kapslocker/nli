@@ -5,6 +5,10 @@ on:
     branches:
       - master
       - releases/**
+  pull_request:
+    branches:
+      - master
+      - releases/**
 
 jobs:
   build:
@@ -37,6 +41,7 @@ jobs:
           python setup.py bdist_wheel -d ./
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v2
+        if: ${{ github.event == github.event.pull_request}}
         with:
           name: aidlswhl
           path: tree-env/*.whl
