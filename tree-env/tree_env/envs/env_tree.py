@@ -21,6 +21,9 @@ class TreeEnv(gym.Env):
         self.label = label
 
     def reset(self):
+        '''
+        Resets the environment.
+        '''
         self.current_step = -1
         self.done = False
         self.premise_tree = []
