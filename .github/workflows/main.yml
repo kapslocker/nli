@@ -22,8 +22,8 @@ jobs:
           # extract base version, branch version and run_number
           run_number=${version##*.}
           rem_ver=${version:0:${#version} - ${#run_number} - 1}
-          branch_version = ${rem_ver##*.}
-          base_version = ${rem_ver:0:${#rem_ver} - ${#branch_version} - 1}
+          branch_version=${rem_ver##*.}
+          base_version=${rem_ver:0:${#rem_ver} - ${#branch_version} - 1}
           echo $runNumber > $branch_version
           echo "::set-output name=version::$version"
           echo "::set-output name=base_version::$base_version"
