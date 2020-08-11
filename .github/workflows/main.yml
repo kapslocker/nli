@@ -23,8 +23,8 @@ jobs:
         id: get_run_details
         run: |
           token=${{ secrets.GITHUB_TOKEN }}
-          runId=${{ github.events.inputs.runId }}
-          releaseVersion=${{ github.events.inputs.releaseVersion }}
+          runId=${{ github.event.inputs.runId }}
+          releaseVersion=${{ github.event.inputs.releaseVersion }}
 
           # API URLs
           run_details_url="https://api.github.com/repos/kapslocker/nli/actions/runs/$runId"
