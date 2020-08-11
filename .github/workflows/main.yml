@@ -34,7 +34,7 @@ jobs:
           run_details=$(curl -H "Authorization: token $token" -L $run_details_url)
           artifact_details=$(curl -H "Authorization: token $token" -L $artifact_details_url)
 
-          echo $run_details
+          echo $artifact_details
           # get branch name
           head_branch=$(echo $run_details | python3 -c "import sys, json; print(json.load(sys.stdin)['head_branch'])")
           base_version=$releaseVersion
@@ -46,9 +46,10 @@ jobs:
           # Join all components and prepare version number
           function join_by { local IFS="$1"; shift; echo "$*"; }
           version=$(join_by . $base_version $branch_version $run_number)
-
+          echo $version
           # Download wheel
-          artifact_url=$(echo $artifact_details | python -c "import sys, json; print([i['archive_download_url'] for i in json.load(sys.stdin)['artifacts'] if i['name'] == 'treewhl'][0])")
+          artifact_url=$(echo $artifact_details | python -c "import sys, json; print([i['archive_download_url'] for i in json.load(sys.stdin)['artifacts'] if i['name'] == 'aidlswhl'][0])")
+          echo $artifact_url
           curl -H "Authorization: token $token" -L $artifact_url -o ../treewhl.zip
 
           # Return the version number for usage in future steps
